@@ -1,0 +1,23 @@
+name: Sync to Gitee
+
+on:
+  push:
+    branches:
+      - main 
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Push to Gitee
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          git config --global user.name "Katze"
+          git config --global user.email "jennistian@gmail.com"
+          git remote add gitee https://gitee.com/jennistian/flutter_blue_plus.git
+          git push -u gitee --all
+          git push -u gitee --tags
