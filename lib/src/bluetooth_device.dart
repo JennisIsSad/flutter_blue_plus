@@ -410,9 +410,9 @@ class BluetoothDevice {
   ///  - [predelay] adds delay to avoid race conditions on some peripherals. see comments below.
   Future<int> requestMtu(int desiredMtu, {double predelay = 0.35, int timeout = 15}) async {
     // check android
-    // if (Platform.isAndroid == false ) {
-    //   throw FlutterBluePlusException(ErrorPlatform.fbp, "requestMtu", FbpErrorCode.androidOnly.index, "android-only");
-    // }
+    if (Platform.isFuchsia || Platform.isIOS || Platform.isLinux || Platform.isMacOS || Platform.isWindows ) {
+      throw FlutterBluePlusException(ErrorPlatform.fbp, "requestMtu", FbpErrorCode.androidOnly.index, "android-only");
+    }
 
     // check connected
     if (isDisconnected) {
