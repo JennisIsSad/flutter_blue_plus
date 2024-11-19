@@ -700,13 +700,16 @@ export default class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallH
           let errorMessage: string = ""
           let errorCode: string = ""
           try {
+            console.info(`[FBP_OHOS] 即将写入数据: 0x${value.toUpperCase()}`);
             await gatt.writeCharacteristicValue(characteristic, writeType);
+            console.info(`[FBP_OHOS] 数据写入成功`);
           } catch (e) {
             errorMessage = e.message;
             errorCode = e.code.toString()
             writeFlag = true;
           }
           if (writeFlag) {
+            console.error(`[FBP_OHOS] 数据写入失败 ErrorCode: ${errorCode}}, ErrorMessage: ${errorMessage}}`);
             result.error("writeCharacteristic", `errorcde: ${errorCode} ,  errmessage: ${errorMessage}`, null);
             break;
           }
