@@ -246,7 +246,7 @@ export default class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallH
               filterArray.push(filter);
             }
             let scanOption: ble.ScanOptions = {
-              dutyMode: ble.ScanDuty.SCAN_MODE_LOW_POWER,
+              dutyMode: ble.ScanDuty.SCAN_MODE_LOW_LATENCY,
               matchMode: ble.MatchMode.MATCH_MODE_AGGRESSIVE,
               interval: 0
             };
