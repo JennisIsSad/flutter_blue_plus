@@ -60,14 +60,15 @@ export default class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallH
   private mWriteDesc: Map<string, string> = new Map();
   private operationsOnPermission: Map<number, (granted: boolean, permission: string) => void> = new Map();
   private lastEventId: number = 1452;
-  private loglevel: LogLevel = LogLevel.DEBUG;
   private mIsScanning: boolean = false;
   private clientDevice: ble.GattClientDevice | null = null;
   private remoteId: string | null = null
   private mScanFilters: Map<string, Object> = new Map();
   private mAdvSeen: Map<string, string> = new Map();
   private mScanCounts: Map<string, number> = new Map();
-
+  private logLevel: LogLevel = LogLevel.DEBUG; // 默认日志级别
+  private readonly TAG: string = "FBP_OHOS"; // 日志标签
+  private readonly DOMAIN: number = 0x1234; // 假定的日志域
   public FlutterBluePlusPlugin() {
   }
 
@@ -76,11 +77,45 @@ export default class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallH
 
   }
 
+  // 设置日志级别
+  setLogLevel(level: LogLevel): void {
+    this.logLevel = level;
+  }
+
+  public log(level: LogLevel, message: string, ...args: (string | number | boolean | object | undefined)[]): void {
+    if (level < this.logLevel) {
+      return;
+    }
+
+    const formattedMessage = `[${this.TAG}] ${message}`;
+    switch (level) {
+      case LogLevel.DEBUG:
+        hilog.debug(this.DOMAIN, this.TAG, formattedMessage, ...args);
+        break;
+      case LogLevel.INFO:
+        hilog.info(this.DOMAIN, this.TAG, formattedMessage, ...args);
+        break;
+      case LogLevel.WARN:
+        hilog.warn(this.DOMAIN, this.TAG, formattedMessage, ...args);
+        break;
+      case LogLevel.ERROR:
+        hilog.error(this.DOMAIN, this.TAG, formattedMessage, ...args);
+        break;
+      case LogLevel.VERBOSE:
+        hilog.fatal(this.DOMAIN, this.TAG, formattedMessage, ...args);
+        break;
+      default:
+        hilog.debug(this.DOMAIN, this.TAG, formattedMessage, ...args);
+        break;
+    }
+  }
+
   getUniqueClassName(): string {
     return "FlutterBluePlusPlugin"
   }
 
   onAttachedToEngine(binding: FlutterPluginBinding): void {
+    this.log(LogLevel.DEBUG, 'onAttachedToEngine');
     this.pluginBinding = binding;
     this.context = this.pluginBinding.getApplicationContext();
     this.channel = new MethodChannel(binding.getBinaryMessenger(), "flutter_blue_plus/methods");
@@ -88,12 +123,14 @@ export default class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallH
   }
 
   onDetachedFromEngine(binding: FlutterPluginBinding): void {
+    this.log(LogLevel.DEBUG, 'onDetachedFromEngine');
     if (this.channel != null) {
       this.channel.setMethodCallHandler(null)
     }
   }
 
   onAttachedToAbility(binding: AbilityPluginBinding) {
+    this.log(LogLevel.DEBUG, 'onAttachedToAbility');
     connection.on('bondStateChange', (data: connection.BondStateParam) => {
       let gatt: ble.GattClientDevice = ble.createGattClientDevice(data.deviceId);
       if (data.state == connection.BondState.BOND_STATE_BONDING) {
@@ -112,6 +149,7 @@ export default class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallH
 
   async onMethodCall(call: MethodCall, result: MethodResult): Promise<void> {
     try {
+      this.log(LogLevel.DEBUG, 'onMethodCall: ' + call.method);
       switch (call.method) {
         case "flutterRestart": {
           result.success(this.mConnectedDevices.size)
@@ -125,10 +163,11 @@ export default class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallH
             this.ensurePermissions(permissions, result);
           }
           this.disconnectAllDevices("flutterRestart");
+          this.log(LogLevel.DEBUG, "connectedPeripherals: " + this.mConnectedDevices.size);
           break;
         }
         case "connectedCount": {
-          hilog.debug(LogLevel.DEBUG, "connectedPeripherals: " + this.mConnectedDevices.size, null);
+          this.log(LogLevel.DEBUG, "connectedPeripherals: " + this.mConnectedDevices.size, null);
           if (this.mConnectedDevices.size == 0) {
             hilog.debug(LogLevel.DEBUG, "Hot Restart: complete", null);
           }
@@ -144,34 +183,32 @@ export default class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallH
             let accessNum: number = -1;
             let checkPermission: Permissions = "ohos.permission.ACCESS_BLUETOOTH";
             let isPermission: boolean = await this.checkSelfPermission(checkPermission);
-            console.info("---checkSelfPermission" + isPermission)
+            this.log(LogLevel.DEBUG, "checkSelfPermission: " + isPermission);
             if (isPermission) {
               let permissions = new Array<Permissions>();
               permissions.push("ohos.permission.ACCESS_BLUETOOTH");
               await this.ensurePermissions(permissions, result);
             } else {
               accessNum = access.getState();
-              console.info("accessNum----" + accessNum)
+              this.log(LogLevel.DEBUG, "accessNum: " + accessNum);
               let map: Map<string, number> = new Map();
               map.set("adapter_state", this.bmAdapterStateEnum(accessNum))
               result.success(map);
             }
-            console.log("getAdapterState----------" + accessNum)
+            this.log(LogLevel.DEBUG, "getAdapterState Access Num:  " + accessNum);
           } catch (e) {
-            console.log("getAdapterState- error ---------" + JSON.stringify(e))
+            this.log(LogLevel.DEBUG, "getAdapterState error: " + JSON.stringify(e));
           }
           break;
         }
         case "getSystemDevices": {
           try {
-            console.log("getSystemDevice----------start")
             let devices: Array<string> = ble.getConnectedBLEDevices();
             let devList: List<Map<string, string>> = new List<Map<string, string>>();
             devices.forEach(device => devList.add(this.bmBluetoothDevice(device)))
             let response: Map<string, object> = new Map();
             response.set("devices", devList);
             result.success(response);
-            console.log("getSystemDevice----------end")
           } catch (err) {
             console.error('errCode: ' + (err as BusinessError).code + ', errMessage: ' +
             (err as BusinessError).message);
@@ -179,7 +216,6 @@ export default class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallH
           break;
         }
         case "turnOn": {
-          console.log("turnOn----------start")
           let permissions = new Array<Permissions>();
           permissions.push("ohos.permission.ACCESS_BLUETOOTH");
           this.ensurePermissions(permissions, result);
@@ -191,7 +227,6 @@ export default class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallH
             access.enableBluetooth();
             result.success(true);
           }
-          console.log("turnOn----------end")
           break;
         }
         case "turnOff": {
@@ -220,7 +255,6 @@ export default class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallH
         case "startScan": {
           try {
             let data: Map<string, Object> = call.args;
-            console.log("startScan----------start1")
             let withServices: List<string> = data.get("with_services") as List<string>;
             let withRemoteIds: List<string> = data.get("with_remote_ids") as List<string>;
             let withNames: List<string> = data.get("with_names") as List<string>;
@@ -235,7 +269,7 @@ export default class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallH
             // this.ensurePermissions(permissions, result);
             let isAdapterOn: boolean = this.isAdapterOn();
             if (isAdapterOn == false) {
-              result.error("startScan", "蓝牙没有打开", null);
+              result.error("startScan", "系统蓝牙没有打开", null);
               return;
             }
             let filterArray: ble.ScanFilter[] = [];
@@ -258,7 +292,7 @@ export default class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallH
             this.mScanFilters = data;
             this.mAdvSeen.clear();
             this.mScanCounts.clear();
-            console.log("startScan------------" + JSON.stringify(filterArray))
+            this.log(LogLevel.DEBUG, "start scan with filter: " + JSON.stringify(filterArray));
             if (filterArray.length == 0) {
               ble.startBLEScan(null, scanOption);
             } else {
@@ -266,17 +300,16 @@ export default class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallH
             }
             console.log("startScan----------end")
           } catch (err) {
-            console.error(' errCode: ' + (err as BusinessError).code + ', errMessage: ' +
-            (err as BusinessError).message);
+            this.log(LogLevel.ERROR, "start scan end  with error: " + JSON.stringify(err));
           }
           result.success(true)
           break;
         }
         case "setLogLevel": {
-          console.log("setLogLevel----------start")
+
           let idx: number = call.args as number;
-          this.loglevel = LogLevel[idx] as ESObject;
-          console.log("setLogLevel----------end")
+          this.logLevel = LogLevel[idx] as ESObject;
+          this.log(LogLevel.DEBUG, "setLogLevel: " + this.logLevel );
           this.mIsScanning = true;
           result.success(true);
           break;
@@ -291,7 +324,8 @@ export default class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallH
           break;
         }
         case "connect": {
-          console.log("connect--------" + JSON.stringify(call.args))
+          // console.log("connect--------" + JSON.stringify(call.args))
+          this.log(LogLevel.DEBUG, "connect with args: " + JSON.stringify(call.args));
           let args: Map<string, string | boolean> = call.args;
           let remoteId: string = args.get("remote_id") as string;
           this.remoteId = remoteId;
@@ -428,7 +462,8 @@ export default class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallH
                 });
               } catch (err) {
                 let errMessage = 'errCode: ' + (err as BusinessError).code + ', errMessage: ' + (err as BusinessError).message;
-                console.error('===onBLECharacteristicChange===' + errMessage);
+                // console.error('===onBLECharacteristicChange===' + errMessage);
+                this.log(LogLevel.ERROR, "onBLECharacteristicChange with error: " + JSON.stringify(err));
                 result.error("onBLECharacteristicChange", errMessage, null);
               }
             }else {
@@ -436,7 +471,8 @@ export default class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallH
                 gatt.off('BLECharacteristicChange');
               } catch (err) {
                 let errMessage = 'errCode: ' + (err as BusinessError).code + ', errMessage: ' + (err as BusinessError).message;
-                console.error('===offBLECharacteristicChange===' + errMessage);
+                // console.error('===offBLECharacteristicChange===' + errMessage);
+                this.log(LogLevel.ERROR, "offBLECharacteristicChange with error: " + JSON.stringify(err));
                 result.error("offBLECharacteristicChange", errMessage, null);
               }
             }
@@ -512,7 +548,7 @@ export default class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallH
             if (gatt == null) {
               gatt = this.mCurrentlyConnectingDevices.get(remoteId) as ble.GattClientDevice;
               if (gatt != null) {
-                hilog.debug(0, "disconnect: cancelling connection in progress", null);
+                this.log(LogLevel.DEBUG, "disconnect: cancelling connection in progress");
               }
             }
             if (gatt == null) {
@@ -521,7 +557,7 @@ export default class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallH
             if (gatt == null) {
               gatt = this.mAutoConnected.get(remoteId) as ble.GattClientDevice;
               if (gatt != null) {
-                hilog.debug(0, "already disconnected. disabling autoconnect", null);
+                this.log(LogLevel.DEBUG, "already disconnected. disabling autoconnect");
                 this.mAutoConnected.delete(remoteId);
                 gatt.disconnect();
                 gatt.close();
@@ -530,7 +566,7 @@ export default class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallH
               }
             }
             if (gatt == null) {
-              hilog.debug(0, "already disconnected", null);
+              this.log(LogLevel.DEBUG, "already disconnected");
               result.success(false); // no work to do
               return;
             }
@@ -564,6 +600,7 @@ export default class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallH
           let remoteId: string = data.get("remote_id") as string;
           let mtu: number = data.get("mtu") as number;
           let gatt: ble.GattClientDevice = this.mConnectedDevices.get(remoteId) as ble.GattClientDevice;
+          this.log(LogLevel.DEBUG, 'requestMtu:' + mtu);
           if (gatt == null) {
             result.error("requestMtu", "gatt.requestMtu() returned false", null);
             break;
@@ -700,16 +737,16 @@ export default class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallH
           let errorMessage: string = ""
           let errorCode: string = ""
           try {
-            console.info(`[FBP_OHOS] 即将写入数据: 0x${value.toUpperCase()}`);
+            this.log(LogLevel.DEBUG, `特征${characteristicUuid}即将写入数据: 0x${value.toUpperCase()}`);
             await gatt.writeCharacteristicValue(characteristic, writeType);
-            console.info(`[FBP_OHOS] 数据写入成功`);
+            this.log(LogLevel.DEBUG, `数据写入成功`);
           } catch (e) {
             errorMessage = e.message;
             errorCode = e.code.toString()
             writeFlag = true;
           }
           if (writeFlag) {
-            console.error(`[FBP_OHOS] 数据写入失败 ErrorCode: ${errorCode}}, ErrorMessage: ${errorMessage}}`);
+            this.log(LogLevel.DEBUG, `数据写入失败 ErrorCode: ${errorCode}}, ErrorMessage: ${errorMessage}}`);
             result.error("writeCharacteristic", `errorcde: ${errorCode} ,  errmessage: ${errorMessage}`, null);
             break;
           }
@@ -975,13 +1012,6 @@ export default class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallH
 
   }
 
-  CharacteristicChange(characteristicChangeReq: ble.BLECharacteristic) {
-    let serviceUuid: string = characteristicChangeReq.serviceUuid;
-    let characteristicUuid: string = characteristicChangeReq.characteristicUuid;
-    let value: Uint8Array = new Uint8Array(characteristicChangeReq.characteristicValue);
-    console.info("===服务[" + serviceUuid + "]的特征[" + characteristicUuid + "]接收到数据：0x" + HexUtil.formatHexString(value));
-  }
-
   bmBondStateEnum(bs: number): number {
     switch (bs) {
       case connection.BondState.BOND_STATE_INVALID:
@@ -1053,7 +1083,7 @@ export default class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallH
     response.set("success", 1);
     response.set("error_code", 0);
     response.set("error_string", "GATT_SUCCESS");
-    console.info("===onCharacteristicReceived===value:" + HexUtil.formatHexString(new Uint8Array(characteristic.characteristicValue)));
+    this.log(LogLevel.DEBUG, "onCharacteristicReceived: 0x" + HexUtil.formatHexString(new Uint8Array(characteristic.characteristicValue)));
     this.channel?.invokeMethod("OnCharacteristicReceived", response)
 
   }
@@ -1359,7 +1389,7 @@ export default class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallH
         }
       }
     } catch (e) {
-      console.error("eeeeeeeeeeeeeeeeee" + JSON.stringify(e))
+      console.error("error: " + JSON.stringify(e))
     }
 
     let map: Map<string, object | string | number> = new Map();
@@ -1520,7 +1550,6 @@ export default class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallH
     } else {
       map.set("platform_name", "");
     }
-    console.log("---打印--device.getMac--" + device.getMac())
     if (device.getMac() != null) {
       map.set("remote_id", device.getMac());
     }
@@ -1621,12 +1650,12 @@ class ServicePair {
   secondary: string | null = null;
 }
 
-enum LogLevel {
-  NONE, // 0
-  ERROR, // 1
-  WARNING, // 2
-  INFO, // 3
-  DEBUG, // 4
-  VERBOSE // 5
+// 定义日志级别的枚举
+export enum LogLevel {
+  NONE = 0,    // 不输出任何日志
+  ERROR = 1,   // 错误级别日志
+  WARN = 2,    // 警告级别日志
+  INFO = 3,    // 信息级别日志
+  DEBUG = 4,   // 调试级别日志
+  VERBOSE = 5  // 冗余级别日志（可选）
 }
-
